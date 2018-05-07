@@ -19,18 +19,19 @@ import matplotlib.pyplot as roberplot
 class Cell(ABC):
     def __init__(self, pos=0):
         self.pos = pos
-   
+        self.state = 0 # Active
+
     def plot(self, N, ax):
         x = 2*self.radius*(self.pos%N + ((self.pos//N)%2)/2)
         y = (self.pos//N)*np.sqrt(3)*self.radius
-        circle = roberplot.Circle((x,y), self.radius, color=self.color, fill=False, lw=1.0, clip_on=False)
+        circle = roberplot.Circle((x,y), self.radius, color=self.colors[self.state], fill=False, lw=1.0, clip_on=False)
         ax.add_artist(circle)
 
 # Tumor cell class
 
 class TumorCell(Cell):
     radius = 2.0
-    color = "red"
+    colors = ["red", "black"]
   
     def __init__(self, pos, parent):
         super().__init__(pos)
@@ -122,6 +123,7 @@ class Tissue():
 
     def timestep(self):
         self.cancer_growth()
+        self.cancer_necrosis()
         self.history.append(self.tumor.copy())
   
     def cancer_growth(self):
@@ -145,7 +147,7 @@ class Tissue():
         pos = self.tumor_centroid(timestep)
         x = 2*TumorCell.radius*(pos%self.N + ((pos//self.N)%2)/2)
         y = (pos//self.N)*np.sqrt(3)*TumorCell.radius
-        circle = roberplot.Circle((x,y), TumorCell.radius, color=TumorCell.color, fill=True, lw=1.0, clip_on=False)
+        circle = roberplot.Circle((x,y), TumorCell.radius, color="orange", fill=True, lw=1.0, clip_on=False)
         ax.add_artist(circle)
         ax.set_xlabel("x")
         ax.set_ylabel("y")

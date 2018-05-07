@@ -123,8 +123,12 @@ class Tissue():
 
     def timestep(self):
         self.cancer_growth()
-        self.cancer_necrosis()
+        #self.cancer_necrosis()
         self.history.append(self.tumor.copy())
+
+    def cancer_necrosis(self):
+        centroid = self.tumor_centroid()
+
   
     def cancer_growth(self):
         for cell in self.tumor[self.tumor != None]:

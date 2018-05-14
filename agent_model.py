@@ -38,7 +38,6 @@ class TumorCell(Cell):
         self.parent = parent
   
     def reproduce(self, tissue, nm):
-        # Choose birth place
         nm += self.pos
         if tissue.boundary != "rigid":
             nm[nm < 0] = nm[nm < 0]%tissue.tumor.size
@@ -123,20 +122,83 @@ class Tissue():
 
     def timestep(self):
         self.cancer_growth()
-        #self.cancer_necrosis()
+        t = self.cancer_necrosis()
+        #print(t.reshape(self.N,self.N))
         self.history.append(self.tumor.copy())
-
+    
     def cancer_necrosis(self):
-        centroid = self.tumor_centroid()
+        counter = 0
+        gg = (self.tumor.copy() == None)*100.0
+        gg2 = self.tumor.copy()
+        size = np.sum(self.tumor != None)
+        while(size !=0):
+            for cell in self.tumor[gg2 != None]:
+                if self.boundary == "rigid":
+                    nm = self.get_nm_rigid(cell.pos)
+                    nm += cell.pos
+                    nm[nm < 0] = nm[nm <0 ]%self.tumor.size
+                    nm[nm >= self.tumor.size] = nm[nm >= self.tumor.size]%np.sqrt(self.tumor.size)
+                else:
+                    nm = self.get_nm_periodic
+                    nm += cell.pos
+                    nm[nm < 0]=cell.pos
+                    nm[nm >= self.tumor.size] = cell.pos
+                mask = (gg2[nm] == None)
+                if np.sum(mask) >0:
+                    #print(gg[nm])
+                    if 100 in gg[nm]:
+                        gg[cell.pos] = 95
+                    if 100 not in gg[nm]:         
+                        gg[cell.pos] = np.sum(gg[nm])/np.sum(gg[nm]!=0) - 5
+                        #print(gg[cell.pos])
+                    #gg2[cell.pos] = None
+                    #size += -1
+                    #if gg[cell.pos] <0:
+                    #    gg[cell.pos] = 1
+                    #if gg[cell.pos]<=5:
+                    #    cell.state = 1
+            for cell in self.tumor[gg2 != None]:
+                if self.boundary == "rigid":
+                    nm = self.get_nm_rigid(cell.pos)
+                    nm += cell.pos
+                    nm[nm < 0] = nm[nm <0 ]%self.tumor.size
+                    nm[nm >= self.tumor.size] = nm[nm >= self.tumor.size]%np.sqrt(self.tumor.size)
+                else:
+                    nm = self.get_nm_periodic
+                    nm += cell.pos
+                    nm[nm < 0]=cell.pos
+                    nm[nm >= self.tumor.size] = cell.pos
+                mask = (gg2[nm] == None)
+                if np.sum(mask) >0 and gg[cell.pos] != 0:
+                    #gg[cell.pos] = np.sum(gg[nm])/np.sum(gg[nm]!=0) - 5
+                    gg2[cell.pos] = None
+                    size += -1
+                    if gg[cell.pos] <0:
+                        gg[cell.pos] = 1
+                    if gg[cell.pos]<=5:
+                        cell.state = 1
+                #print(size)
+                if size == self.N**2:
+                    break
+            if size == self.N**2:
+                break
+                #if np.sum(mask) == 0 and gg[cell.pos] == 0:
+                #    gg[cell.pos] = np.mean(gg[nm])
+                #    if np.mean(gg[nm]) != 0:
+                #        size += -1
+                #    if gg[cell.pos] <= 5:
+                #        cell.state = 1
+        return(gg)
 
-  
     def cancer_growth(self):
         for cell in self.tumor[self.tumor != None]:
+            new_cell = None
             if self.boundary=="rigid":
                 nm = self.get_nm_rigid(cell.pos)
             else:
                 nm = self.get_nm_periodic(cell.pos)
-            new_cell = cell.reproduce(self, nm)
+            if cell.state == 0:
+                new_cell = cell.reproduce(self, nm)
             if new_cell != None:
                 self.tumor[new_cell.pos] = new_cell
   

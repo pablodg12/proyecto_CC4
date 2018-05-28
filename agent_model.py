@@ -12,6 +12,7 @@ Original file is located at
 import numpy as np
 from abc import ABC
 import matplotlib.pyplot as roberplot
+from copy import deepcopy
 
 # %matplotlib inline
 
@@ -33,9 +34,11 @@ class TumorCell(Cell):
     radius = 2.0
     colors = ["red", "black"]
   
-    def __init__(self, pos, parent):
+    def __init__(self, pos, parent, consumption=8):
         super().__init__(pos)
         self.parent = parent
+        self.state = 0
+        self.consumption = consumption
   
     def reproduce(self, tissue, nm):
         nm += self.pos
@@ -66,13 +69,15 @@ class TCell(Cell):
 
 # Tissue (grid) class
 class Tissue():
-    def __init__(self, N=10, init=0, boundary="rigid"):
+    def __init__(self, N=10, init=0, boundary="rigid", alpha=0.2):
         self.N = N # Lattice row size
         self.gm = np.random.choice([0.1,0.1,0.3,0.3,0.05,0.05], size=6, replace=False) # Irrigation gradient mask
         self.boundary = boundary
+        self.alpha = alpha
         self.tumor = np.empty(self.N**2, dtype=object) # Equilateral triangle lattice
         self.tumor[init] = TumorCell(init, -1)
-        self.history = [self.tumor.copy()]
+        self.history = [deepcopy(self.tumor)]
+        self.resources = [np.random.randint(50,100, self.N**2)]
   
     # Returns the neighbors mask for a given cell with periodic boundary conditions.
     def get_nm_periodic(self, i):
@@ -121,74 +126,25 @@ class Tissue():
         return int(pos)
 
     def timestep(self):
+        self.resources.append(deepcopy(self.resources[-1]))
         self.cancer_growth()
-        t = self.cancer_necrosis()
-        #print(t.reshape(self.N,self.N))
-        self.history.append(self.tumor.copy())
+        self.resources_flux()
+        self.cancer_necrosis()
+        self.history.append(deepcopy(self.tumor))
     
+    def resources_flux(self):
+        for i in range(0, self.N**2):
+            if i < self.N or i > self.N**2 - self.N or i%self.N == 0 or i%self.N == self.N-1:
+                continue
+            nb = self.get_nm_rigid(i) + i
+            self.resources[-1][i] = self.resources[-2][i] + self.alpha/6*((self.resources[-2][nb]).sum() - 6*self.resources[-2][i])
+            if self.tumor[i] != None and self.tumor[i].state == 0:
+                self.resources[-1][i] = np.max((0, self.resources[-1][i] - self.tumor[i].consumption))
+
     def cancer_necrosis(self):
-        counter = 0
-        gg = (self.tumor.copy() == None)*100.0
-        gg2 = self.tumor.copy()
-        size = np.sum(self.tumor != None)
-        while(size !=0):
-            for cell in self.tumor[gg2 != None]:
-                if self.boundary == "rigid":
-                    nm = self.get_nm_rigid(cell.pos)
-                    nm += cell.pos
-                    nm[nm < 0] = nm[nm <0 ]%self.tumor.size
-                    nm[nm >= self.tumor.size] = nm[nm >= self.tumor.size]%np.sqrt(self.tumor.size)
-                else:
-                    nm = self.get_nm_periodic
-                    nm += cell.pos
-                    nm[nm < 0]=cell.pos
-                    nm[nm >= self.tumor.size] = cell.pos
-                mask = (gg2[nm] == None)
-                if np.sum(mask) >0:
-                    #print(gg[nm])
-                    if 100 in gg[nm]:
-                        gg[cell.pos] = 95
-                    if 100 not in gg[nm]:         
-                        gg[cell.pos] = np.sum(gg[nm])/np.sum(gg[nm]!=0) - 5
-                        #print(gg[cell.pos])
-                    #gg2[cell.pos] = None
-                    #size += -1
-                    #if gg[cell.pos] <0:
-                    #    gg[cell.pos] = 1
-                    #if gg[cell.pos]<=5:
-                    #    cell.state = 1
-            for cell in self.tumor[gg2 != None]:
-                if self.boundary == "rigid":
-                    nm = self.get_nm_rigid(cell.pos)
-                    nm += cell.pos
-                    nm[nm < 0] = nm[nm <0 ]%self.tumor.size
-                    nm[nm >= self.tumor.size] = nm[nm >= self.tumor.size]%np.sqrt(self.tumor.size)
-                else:
-                    nm = self.get_nm_periodic
-                    nm += cell.pos
-                    nm[nm < 0]=cell.pos
-                    nm[nm >= self.tumor.size] = cell.pos
-                mask = (gg2[nm] == None)
-                if np.sum(mask) >0 and gg[cell.pos] != 0:
-                    #gg[cell.pos] = np.sum(gg[nm])/np.sum(gg[nm]!=0) - 5
-                    gg2[cell.pos] = None
-                    size += -1
-                    if gg[cell.pos] <0:
-                        gg[cell.pos] = 1
-                    if gg[cell.pos]<=5:
-                        cell.state = 1
-                #print(size)
-                if size == self.N**2:
-                    break
-            if size == self.N**2:
-                break
-                #if np.sum(mask) == 0 and gg[cell.pos] == 0:
-                #    gg[cell.pos] = np.mean(gg[nm])
-                #    if np.mean(gg[nm]) != 0:
-                #        size += -1
-                #    if gg[cell.pos] <= 5:
-                #        cell.state = 1
-        return(gg)
+        for cell in self.tumor[self.tumor != None]:
+            if cell.state == 0 and self.resources[-1][cell.pos] == 0:
+                cell.state = 1
 
     def cancer_growth(self):
         for cell in self.tumor[self.tumor != None]:

@@ -34,7 +34,7 @@ class TumorCell(Cell):
     radius = 2.0
     colors = ["red", "black"]
   
-    def __init__(self, pos, parent, consumption=8):
+    def __init__(self, pos, parent, consumption=3):
         super().__init__(pos)
         self.parent = parent
         self.state = 0
@@ -69,7 +69,7 @@ class TCell(Cell):
 
 # Tissue (grid) class
 class Tissue():
-    def __init__(self, N=10, init=0, boundary="rigid", alpha=0.2):
+    def __init__(self, N=10, init=0, boundary="rigid", alpha=0.9):
         self.N = N # Lattice row size
         self.gm = np.random.choice([0.1,0.1,0.3,0.3,0.05,0.05], size=6, replace=False) # Irrigation gradient mask
         self.boundary = boundary
@@ -77,7 +77,7 @@ class Tissue():
         self.tumor = np.empty(self.N**2, dtype=object) # Equilateral triangle lattice
         self.tumor[init] = TumorCell(init, -1)
         self.history = [deepcopy(self.tumor)]
-        self.resources = [np.random.randint(50,100, self.N**2)]
+        self.resources = [np.random.randint(359,400, self.N**2)]
   
     # Returns the neighbors mask for a given cell with periodic boundary conditions.
     def get_nm_periodic(self, i):

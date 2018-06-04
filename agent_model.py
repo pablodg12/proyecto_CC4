@@ -22,23 +22,17 @@ class Cell(ABC):
         self.pos = pos
         self.state = 0 # Active
 
-    def plot(self, N, ax):
-        x = 2*self.radius*(self.pos%N + ((self.pos//N)%2)/2)
-        y = (self.pos//N)*np.sqrt(3)*self.radius
-        circle = roberplot.Circle((x,y), self.radius, color=self.colors[self.state], fill=False, lw=1.0, clip_on=False)
-        ax.add_artist(circle)
-
 # Tumor cell class
 
 class TumorCell(Cell):
     radius = 2.0
     colors = ["red", "black"]
   
-    def __init__(self, pos, parent, consumption=3):
+    def __init__(self, pos, consumption=4, interphase_length=10):
         super().__init__(pos)
-        self.parent = parent
-        self.state = 0
         self.consumption = consumption
+        self.interphase_length = interphase_length
+        self.size = 0
   
     def reproduce(self, tissue, nm):
         nm += self.pos
@@ -52,32 +46,47 @@ class TumorCell(Cell):
         if not np.any(mask):
             return None
         new_pos = nm[np.argmax(np.random.rand(mask.size)*mask)]
-        # Create cell 
-        return TumorCell(new_pos, self.pos)
+        
+        return TumorCell(new_pos)
+
+    def plot(self, N):
+        x = 2*self.radius*(self.pos%N + ((self.pos//N)%2)/2)
+        y = (self.pos//N)*np.sqrt(3)*self.radius
+        circle = roberplot.Circle((x,y), self.radius, color=self.colors[self.state], fill=False, lw=1.0, clip_on=False)
+        return circle
 
 # T cell class
 
 class TCell(Cell):
     radius = 1.0
-    color = "red"
+    colors = ["blue"]
 
-    def __init__(self, pos):
+    def __init__(self, pos, consumption=2):
         super().__init__(pos)
+        self.state = 0
+        self.consumption = consumption
     
     def move(self):
         return
 
+    def plot(self, N):
+        n = N-1
+        x = 2*TumorCell.radius*(self.pos%n + 1 - ((self.pos//n)%2)/2)
+        y = (self.pos//n + 1)*np.sqrt(3)/6*self.radius
+        circle = roberplot.Circle((x,y), self.radius, color=self.colors[self.state], fill=True, lw=1.0, clip_on=False)
+        return circle
+
 # Tissue (grid) class
 class Tissue():
-    def __init__(self, N=10, init=0, boundary="rigid", alpha=0.9):
+    def __init__(self, N=10, init=0, boundary="rigid", alpha=0.8):
         self.N = N # Lattice row size
         self.gm = np.random.choice([0.1,0.1,0.3,0.3,0.05,0.05], size=6, replace=False) # Irrigation gradient mask
         self.boundary = boundary
         self.alpha = alpha
         self.tumor = np.empty(self.N**2, dtype=object) # Equilateral triangle lattice
-        self.tumor[init] = TumorCell(init, -1)
+        self.tumor[init] = TumorCell(init)
         self.history = [deepcopy(self.tumor)]
-        self.resources = [np.random.randint(359,400, self.N**2)]
+        self.resources = [np.random.randint(200,250, self.N**2)]
   
     # Returns the neighbors mask for a given cell with periodic boundary conditions.
     def get_nm_periodic(self, i):
@@ -116,14 +125,6 @@ class Tissue():
             else:
                 nm = [1, self.N+1, self.N, -1, -self.N, -self.N+1]
         return np.array(nm)
-
-    def tumor_centroid(self, timestep=-1):
-        mx = (self.history[timestep] != None).reshape(self.N, self.N)
-        x, y = np.meshgrid(np.arange(self.N), np.arange(self.N))
-        xm = x[mx==1].mean()
-        ym = y[mx==1].mean()
-        pos = np.round(xm) + self.N*np.round(ym)
-        return int(pos)
 
     def timestep(self):
         self.resources.append(deepcopy(self.resources[-1]))
@@ -164,13 +165,8 @@ class Tissue():
         ax.set_xlim(-2, (self.N+2)*TumorCell.radius*2)
         ax.set_ylim(-2, (self.N+2)*TumorCell.radius*np.sqrt(3))
         for cell in self.history[timestep][self.history[timestep] != None]:
-            cell.plot(self.N, ax)
+            ax.add_artist(cell.plot(self.N))
             continue
-        pos = self.tumor_centroid(timestep)
-        x = 2*TumorCell.radius*(pos%self.N + ((pos//self.N)%2)/2)
-        y = (pos//self.N)*np.sqrt(3)*TumorCell.radius
-        circle = roberplot.Circle((x,y), TumorCell.radius, color="orange", fill=True, lw=1.0, clip_on=False)
-        ax.add_artist(circle)
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_title("Cancerous tissue on timestep " + str(timestep))

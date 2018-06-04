@@ -155,3 +155,27 @@ class Tissue():
    		ax[1].set_xlabel("x")
    		ax[1].set_ylabel("y")
    		ax[1].set_title("Resources on timestep " + str(timestep))
+
+    def plot_data(self):
+    	sums = []
+    	for i in range(0, len(self.tumor)):
+    		sums.append([0,0,0,0])
+    		for cell in self.tumor[i][self.tumor[i] != None]:
+    			sums[-1][cell.state] += 1
+
+    	fig, ax = roberplot.subplots(1,2)
+    	fig.set_size_inches(16,7.5)
+    	[a,b,c,d] = ax[0].plot(sums)
+    	ax[0].legend([a,b,c,d], ["Growing cells", "Resting cells", "Dividing Cells", "Dead cells"], loc=1)
+    	ax[0].set_xlabel("Timestep")
+    	ax[0].set_ylabel("N° of cells")
+    	ax[0].set_title("Number of cells by state for each timestep")
+    	ax[0].grid(True)
+
+    	ax[1].scatter(np.arange(0, len(self.tumor)), np.log(np.sum(np.array(sums)[:,0:3], axis=1)), label="Active cells")
+    	ax[1].scatter(np.arange(0, len(self.tumor)), np.log(np.sum(self.resources, axis=1)), label="Resources")
+    	ax[1].set_xlabel("Timestep")
+    	ax[1].set_ylabel("log Quantity")
+    	ax[1].set_title("Number of active cells and resources")
+    	ax[1].legend()
+    	ax[1].grid(True)

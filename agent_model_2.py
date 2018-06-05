@@ -3,10 +3,11 @@ import matplotlib.pyplot as roberplot
 import seaborn as sns
 from copy import deepcopy
 
-# Tumor cell class, with 3 possible states:
+# Tumor cell class, with 4 possible states:
 #	- Interphase: cell grows, sintetize DNA and prepares for mitosis (includes phases G1, S and G2).
 #	- Mitosis: cell divides itself (phase M).
 #	- Resting: cell does not divides itself and does not consume resources (phase G0).
+#	- Dead: cell has gone through apoptosis or lysis.
 class TumorCell():
     radius = 2.0
     colors = ["red", "orange", "green", "gray"]
@@ -79,8 +80,8 @@ class TumorCell():
         circle = roberplot.Circle((x,y), self.radius, color=self.colors[self.state], fill=False, lw=1.0, clip_on=False)
         return circle
 
-# Tissue class, contains the honeycomb lattice with all the agents involved.
-class Tissue():
+# Tissue class, contains the honeycomb lattice with only tumor cells and resources.
+class Tissue1():
     def __init__(self, params):
     	# Model parameters
         self.N = params["lattice_size"] # Lattice row length
@@ -147,6 +148,195 @@ class Tissue():
    		ax[0].set_title("Tissue on timestep " + str(timestep))
 
    		sns.heatmap(self.resources[timestep].reshape(self.N, self.N), 
+   			vmin=0, 
+   			vmax=self.resources[0].max(), 
+   			ax=ax[1],
+   			xticklabels=False,
+   			yticklabels=False)
+   		ax[1].set_xlabel("x")
+   		ax[1].set_ylabel("y")
+   		ax[1].set_title("Resources on timestep " + str(timestep))
+
+    def plot_data(self):
+    	sums = []
+    	for i in range(0, len(self.tumor)):
+    		sums.append([0,0,0,0])
+    		for cell in self.tumor[i][self.tumor[i] != None]:
+    			sums[-1][cell.state] += 1
+
+    	fig, ax = roberplot.subplots(1,2)
+    	fig.set_size_inches(16,7.5)
+    	[a,b,c,d] = ax[0].plot(sums)
+    	ax[0].legend([a,b,c,d], ["Growing cells", "Resting cells", "Dividing Cells", "Dead cells"], loc=1)
+    	ax[0].set_xlabel("Timestep")
+    	ax[0].set_ylabel("N° of cells")
+    	ax[0].set_title("Number of cells by state for each timestep")
+    	ax[0].grid(True)
+
+    	ax[1].scatter(np.arange(0, len(self.tumor)), np.log(np.sum(np.array(sums)[:,0:3], axis=1)), label="Active cells")
+    	ax[1].scatter(np.arange(0, len(self.tumor)), np.log(np.sum(self.resources, axis=1)), label="Resources")
+    	ax[1].set_xlabel("Timestep")
+    	ax[1].set_ylabel("log Quantity")
+    	ax[1].set_title("Number of active cells and resources")
+    	ax[1].legend()
+    	ax[1].grid(True)
+
+# Class for Natural Killer (NK) Cells, with 3 possible states:
+#	- Deactivated: NK cell is moving, surveilling the cells near it. 
+#	- Activated: 
+class NKCell():
+	radius = 1.0
+	colors = ["blue", "purple"]
+
+	def __init__(self, pos, movement_speed=1, detection_probability=0.2):
+		#Parameters
+		self.ms = movement_speed
+		self.dp = detection_probability
+		#Variables
+		self.pos = pos
+		self.state = 0
+
+	def cycle(self, tumor, nkcells, resources, nm_nk, nm_tumor):
+		if self.state == 0:
+			tmask = (1 - (tumor[nm_tumor] != None)*np.random.rand(nm_tumor.size)) < self.dp
+			if np.any(tmask):
+				self.state = 1
+			else:
+				nbohrs = nm_nk + self.pos
+				mask = (nkcells[nbohrs] == None)*np.random.rand(nbohrs.size)
+				if np.any(mask):
+					pos = nbohrs[np.argmax(mask)]
+					nkcells[pos] = self
+					nkcells[self.pos] = None
+					self.pos = pos
+	def plot(self, M):
+		x = TumorCell.radius*(self.pos%(2*M) + 1)
+		h = np.sqrt(3)*TumorCell.radius
+		if (self.pos//(2*M))%2 == 0:
+			y = h*((self.pos//(2*M)) + (self.pos%2)/3 + 1/3)
+		else:
+			y = h*((self.pos//(2*M) + 1) - (self.pos%2)/3 - 1/3)
+		circle = roberplot.Circle((x,y), self.radius, color=self.colors[self.state], fill=True, lw=1.0, clip_on=False)
+		return circle
+
+# Tissue class, contains the honeycomb lattice with all the agents involved.
+class Tissue2():
+    def __init__(self, params):
+    	# Model parameters
+        self.N = params["lattice_size"] # Lattice row length for Tumor Cells.
+        self.alpha = params["difussion_coef"] # Diffusion coefficient for resources flux.
+        self.M = self.N-1 # Lattice row length for NK Cells.
+        # Model structures
+        self.tumor = [np.empty(self.N**2, dtype=object)]
+        # Initial tumor
+        self.tumor[-1][params["tumor_init_pos"]] = TumorCell(params["tumor_init_pos"], 
+        	consumption=params["tumorcell_consumption"],
+        	mitosis_threshold=params["tumorcell_mitosis_threshold"],
+        	apoptosis_threshold=params["tumorcell_apoptosis_threshold"])
+        self.resources = [np.random.randint(params["resources_init_min"], params["resources_init_max"], self.N**2)]
+        self.nkcells = [np.empty(2*self.M**2, dtype=object)]
+        # Initial NK Cells
+        init_pos = np.random.randint(0, 2*self.M**2, size=params["nk_init_count"])
+        for pos in init_pos:
+        	self.nkcells[-1][pos] = NKCell(pos)
+
+    # Executes one timestep
+    def timestep(self):
+        self.resources.append(deepcopy(self.resources[-1]))
+        self.tumor.append(deepcopy(self.tumor[-1]))
+        self.nkcells.append(deepcopy(self.nkcells[-1]))
+
+        self.tumor_timestep()
+        self.nk_timestep()
+        self.resources_flux()
+
+    # Returns the neighbors mask for a given cell with rigid boundary conditions.
+    def get_tumor_nm(self, i):
+        if (i%self.N == 0):
+            if((i//self.N)%2 == 0):
+                nm = [1, self.N, 0, 0, 0, -self.N]
+            else:
+                nm = [1, self.N+1, self.N, 0, -self.N, -self.N+1]
+        elif (i%self.N == self.N-1):
+            if(((i+1)//self.N)%2 == 0):
+                nm = [0, 0, self.N, -1, -self.N, 0]
+            else:
+                nm = [0, self.N, self.N-1, -1, -self.N-1, -self.N]
+        else:
+            if((i//self.N)%2 == 0):
+                nm = [1, self.N, self.N-1, -1, -self.N-1, -self.N]
+            else:
+                nm = [1, self.N+1, self.N, -1, -self.N, -self.N+1]
+        return np.array(nm)
+
+    def get_nk_tumor_nm(self, i):
+    	e = i//2 + i//(2*self.M)
+    	if (i//(2*self.M))%2 == 0:
+    		if i%2 == 0:	
+    			nm = [e, e+1, e+self.N]
+    		else:
+    			nm = [e+1, e+self.N, e+self.N+1]
+    	else:
+    		if i%2 == 0:
+    			nm = [e, e+self.N, e+self.N+1]
+    		else:
+    			nm = [e, e+1, e+self.N+1]
+    	return np.array(nm)
+
+    def get_nk_nm(self, i):
+    	if (i//(2*self.M))%2 == 0:
+    		if i%2 == 0:
+    			nm = [-1, 1, -self.M*2]
+    		else:
+    			nm = [-1, 1, self.M*2]
+    	else:
+    		if i%2 == 0:
+    			nm = [-1, 1, self.M*2]
+    		else:
+    			nm = [-1, 1, -self.M*2]
+    	if i%(2*self.M) == 0:
+    		nm[0] = self.M*2 - 1
+    	if i%(2*self.M) == (2*self.M - 1):
+    		nm[1] = -self.M*2 + 1
+    	if (i//(2*self.M)) == 0 and i%2 == 0:
+    		nm[2] = 2*self.M**2 - self.M*2
+    	if i//(self.M*2) == (self.M-1) and i%2 == 0:
+    		nm[2] = -2*self.M**2 + self.M*2
+    	return np.array(nm)
+
+    def resources_flux(self):
+    	aux = deepcopy(self.resources[-1])
+    	for i in range(0, self.N**2):
+            if i < self.N or i > self.N**2 - self.N or i%self.N == 0 or i%self.N == self.N-1:
+                self.resources[-1][i] = self.resources[-2][i]
+                continue
+            nbohrs = self.get_tumor_nm(i) + i
+            self.resources[-1][i] = aux[i] + self.alpha/6*((aux[nbohrs]).sum() - 6*aux[i])
+
+    def nk_timestep(self):
+    	for cell in self.nkcells[-1][self.nkcells[-1] != None]:
+    		cell.cycle(self.tumor[-1], self.nkcells[-1], self.resources[-1], self.get_nk_nm(cell.pos), self.get_nk_tumor_nm(cell.pos))
+
+    def tumor_timestep(self):
+    	for cell in self.tumor[-1][self.tumor[-1] != None]:
+    		cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))
+
+    def plot_tissue(self, timestep=-1):
+   		fig, ax = roberplot.subplots(1,2)
+   		fig.set_size_inches(16,7.5)
+   		ax[0].set_xlim(-2, (self.N+2)*TumorCell.radius*2)
+   		ax[0].set_ylim(-2, (self.N+2)*TumorCell.radius*np.sqrt(3))
+   		for tumorcell in self.tumor[timestep][self.tumor[timestep] != None]:
+   			ax[0].add_artist(tumorcell.plot(self.N))
+   			continue
+   		for nkcell in self.nkcells[timestep][self.nkcells[timestep] != None]:
+   			ax[0].add_artist(nkcell.plot(self.M))
+   			continue
+   		ax[0].set_xlabel("x")
+   		ax[0].set_ylabel("y")
+   		ax[0].set_title("Tissue on timestep " + str(timestep))
+
+   		sns.heatmap(np.flip(self.resources[timestep].reshape(self.N, self.N), axis=0), 
    			vmin=0, 
    			vmax=self.resources[0].max(), 
    			ax=ax[1],

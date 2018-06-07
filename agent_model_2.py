@@ -12,7 +12,7 @@ class TumorCell():
     radius = 2.0
     colors = ["red", "orange", "green", "gray"]
   
-    def __init__(self, pos, consumption=2, mitosis_threshold=10, apoptosis_threshold=10):
+    def __init__(self, pos, N, consumption=2, mitosis_threshold=10, apoptosis_threshold=10):
     	# Parameters
         self.consumption = consumption # resources consumed each timestep
         self.mitosis_threshold = mitosis_threshold # resources needed to enter mitosis
@@ -22,6 +22,12 @@ class TumorCell():
         self.state = 0 # inital state
         self.reserve = apoptosis_threshold
         self.size = np.random.randint(0, self.mitosis_threshold//2) # initial size (consumed resources)
+        self.center = self.center(N)
+
+    def center(self, N):
+    	x = 2*self.radius*(self.pos%N + ((self.pos//N)%2)/2)
+    	y = (self.pos//N)*np.sqrt(3)*self.radius
+    	return (x,y)
 
     def cycle(self, tumor, resources, nbohrs):
     	if self.state != 3:
@@ -68,6 +74,7 @@ class TumorCell():
     			else:
     				new_pos = nbohrs[np.argmax(mask)]
     				tumor[new_pos] = TumorCell(new_pos, 
+    					np.sqrt(tumor.size),
     					consumption=self.consumption, 
     					mitosis_threshold=self.mitosis_threshold, 
     					apoptosis_threshold=self.apoptosis_threshold)
@@ -75,10 +82,8 @@ class TumorCell():
     				self.state = 0
 
     def plot(self, N):
-        x = 2*self.radius*(self.pos%N + ((self.pos//N)%2)/2)
-        y = (self.pos//N)*np.sqrt(3)*self.radius
-        circle = roberplot.Circle((x,y), self.radius, color=self.colors[self.state], fill=False, lw=1.0, clip_on=False)
-        return circle
+    	circle = roberplot.Circle(self.center, self.radius, color=self.colors[self.state], fill=False, lw=1.0, clip_on=False)
+    	return circle
 
 # Tissue class, contains the honeycomb lattice with only tumor cells and resources.
 class Tissue1():
@@ -89,7 +94,7 @@ class Tissue1():
 
         # Model structures
         self.tumor = [np.empty(self.N**2, dtype=object)]
-        self.tumor[-1][params["tumor_init_pos"]] = TumorCell(params["tumor_init_pos"], 
+        self.tumor[-1][params["tumor_init_pos"]] = TumorCell(params["tumor_init_pos"], self.N,
         	consumption=params["tumorcell_consumption"],
         	mitosis_threshold=params["tumorcell_mitosis_threshold"],
         	apoptosis_threshold=params["tumorcell_apoptosis_threshold"])
@@ -188,27 +193,36 @@ class NKCell():
 	radius = 1.0
 	colors = ["blue", "purple"]
 
-	def __init__(self, pos, movement_speed=1, detection_probability=0.2):
+	def __init__(self, pos, movement_speed=1, detection_probability=0.2, cytokines_gen=12):
 		#Parameters
 		self.ms = movement_speed
 		self.dp = detection_probability
+		self.cr = cytokines_gen
 		#Variables
 		self.pos = pos
 		self.state = 0
 
-	def cycle(self, tumor, nkcells, resources, nm_nk, nm_tumor):
+	def cycle(self, tumor, nkcells, resources, cytokines, nm_nk, nm_tumor):
 		if self.state == 0:
 			tmask = (1 - (tumor[nm_tumor] != None)*np.random.rand(nm_tumor.size)) < self.dp
 			if np.any(tmask):
 				self.state = 1
 			else:
 				nbohrs = nm_nk + self.pos
-				mask = (nkcells[nbohrs] == None)*np.random.rand(nbohrs.size)
+				mask = (nkcells[nbohrs] == None)*cytokines[nm_tumor]
 				if np.any(mask):
-					pos = nbohrs[np.argmax(mask)]
+					pos = nbohrs[np.argmax((mask==mask.max())*np.random.rand(mask.size))]
 					nkcells[pos] = self
 					nkcells[self.pos] = None
 					self.pos = pos
+		elif self.state == 1:
+			tmask = (tumor[nm_tumor] != None)*np.random.rand(nm_tumor.size)
+			if np.any(tmask):
+				if tumor[nm_tumor[np.argmax(tmask)]].state != 3:
+					# Release cytokines
+					cytokines[nm_tumor] += self.cr
+				tumor[nm_tumor[np.argmax(tmask)]] = None
+			self.state = 0
 	def plot(self, M):
 		x = TumorCell.radius*(self.pos%(2*M) + 1)
 		h = np.sqrt(3)*TumorCell.radius
@@ -224,31 +238,38 @@ class Tissue2():
     def __init__(self, params):
     	# Model parameters
         self.N = params["lattice_size"] # Lattice row length for Tumor Cells.
-        self.alpha = params["difussion_coef"] # Diffusion coefficient for resources flux.
+        self.alpha = params["resources_difussion_coef"] # Diffusion coefficient for resources flux.
+        self.beta = params["cytokines_difussion_coef"] # Diffusion coefficient for cytokines flux.
         self.M = self.N-1 # Lattice row length for NK Cells.
         # Model structures
         self.tumor = [np.empty(self.N**2, dtype=object)]
         # Initial tumor
-        self.tumor[-1][params["tumor_init_pos"]] = TumorCell(params["tumor_init_pos"], 
+        self.tumor[-1][params["tumor_init_pos"]] = TumorCell(params["tumor_init_pos"], self.N, 
         	consumption=params["tumorcell_consumption"],
         	mitosis_threshold=params["tumorcell_mitosis_threshold"],
         	apoptosis_threshold=params["tumorcell_apoptosis_threshold"])
         self.resources = [np.random.randint(params["resources_init_min"], params["resources_init_max"], self.N**2)]
+        self.cytokines = [np.random.randint(params["cytokines_init_min"], params["cytokines_init_max"], self.N**2)]
         self.nkcells = [np.empty(2*self.M**2, dtype=object)]
         # Initial NK Cells
         init_pos = np.random.randint(0, 2*self.M**2, size=params["nk_init_count"])
         for pos in init_pos:
-        	self.nkcells[-1][pos] = NKCell(pos)
+        	self.nkcells[-1][pos] = NKCell(pos,
+        		movement_speed=params["nkcell_movement_speed"],
+        		detection_probability=params["nkcell_detection_probability"],
+        		cytokines_gen=params["nkcell_cytokines_release"])
 
     # Executes one timestep
     def timestep(self):
         self.resources.append(deepcopy(self.resources[-1]))
+        self.cytokines.append(deepcopy(self.cytokines[-1]))
         self.tumor.append(deepcopy(self.tumor[-1]))
         self.nkcells.append(deepcopy(self.nkcells[-1]))
 
         self.tumor_timestep()
         self.nk_timestep()
         self.resources_flux()
+        self.cytokines_flux()
 
     # Returns the neighbors mask for a given cell with rigid boundary conditions.
     def get_tumor_nm(self, i):
@@ -268,6 +289,30 @@ class Tissue2():
             else:
                 nm = [1, self.N+1, self.N, -1, -self.N, -self.N+1]
         return np.array(nm)
+
+    # Returns the neighbors mask for a given cell with periodic boundary conditions.
+    def get_tumor_nm_periodic(self, i):
+    	if (i//self.N)%2 == 0:
+        	nm = np.array([1, self.N, self.N-1, -1, -self.N-1, -self.N])
+        	if i%self.N == 0:
+        		nm[[2,3,4]] = [2*self.N-1, self.N-1, -1]
+        	if i%self.N == self.N-1:
+        		nm[0] = -self.N + 1
+    	else:
+        	nm = np.array([1, self.N+1, self.N, -1, -self.N, -self.N+1])
+        	if i%self.N == self.N-1:
+        		nm[[0,1,5]] = [-self.N+1, 1, -self.N*2 + 1]
+        	if i%self.N == 0:
+        		nm[3] = self.N - 1
+    	if i//self.N == 0:
+        	nm[[4,5]] = [self.N*(self.N-1) - 1, self.N*(self.N-1)]
+        	if i == 0:
+        		nm[4] = self.N**2 - 1
+    	if i//self.N == self.N - 1:
+        	nm[[1,2]] = [-self.N*(self.N-1) + 1, -self.N*(self.N-1)]
+        	if i == self.N**2 - 1:
+        		nm[1] = -self.N**2 + 1
+    	return nm
 
     def get_nk_tumor_nm(self, i):
     	e = i//2 + i//(2*self.M)
@@ -313,9 +358,15 @@ class Tissue2():
             nbohrs = self.get_tumor_nm(i) + i
             self.resources[-1][i] = aux[i] + self.alpha/6*((aux[nbohrs]).sum() - 6*aux[i])
 
+    def cytokines_flux(self):
+    	aux = deepcopy(self.cytokines[-1])
+    	for i in range(0, self.N**2 - 1):
+            nbohrs = self.get_tumor_nm_periodic(i) + i
+            self.cytokines[-1][i] = aux[i] + self.alpha/6*((aux[nbohrs]).sum() - 6*aux[i])
+
     def nk_timestep(self):
     	for cell in self.nkcells[-1][self.nkcells[-1] != None]:
-    		cell.cycle(self.tumor[-1], self.nkcells[-1], self.resources[-1], self.get_nk_nm(cell.pos), self.get_nk_tumor_nm(cell.pos))
+    		cell.cycle(self.tumor[-1], self.nkcells[-1], self.resources[-1], self.cytokines[-1], self.get_nk_nm(cell.pos), self.get_nk_tumor_nm(cell.pos))
 
     def tumor_timestep(self):
     	for cell in self.tumor[-1][self.tumor[-1] != None]:
@@ -336,9 +387,9 @@ class Tissue2():
    		ax[0].set_ylabel("y")
    		ax[0].set_title("Tissue on timestep " + str(timestep))
 
-   		sns.heatmap(np.flip(self.resources[timestep].reshape(self.N, self.N), axis=0), 
+   		sns.heatmap(np.flip(self.cytokines[timestep].reshape(self.N, self.N), axis=0), 
    			vmin=0, 
-   			vmax=self.resources[0].max(), 
+   			vmax=self.cytokines[0].max(), 
    			ax=ax[1],
    			xticklabels=False,
    			yticklabels=False)

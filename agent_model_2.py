@@ -223,7 +223,7 @@ class NKCell():
 				if tumor[nm_tumor[np.argmax(tmask)]].state != 3:
 					# Release cytokines
 					cytokines[nm_tumor] += self.cr
-				tumor[nm_tumor[np.argmax(tmask)]] = None
+					tumor[nm_tumor[np.argmax(tmask)]] = None
 			self.state = 0
 	def plot(self, M):
 		x = TumorCell.radius*(self.pos%(2*M) + 1)

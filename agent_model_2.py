@@ -209,8 +209,10 @@ class NKCell():
 				self.state = 1
 			else:
 				nbohrs = nm_nk + self.pos
-				mask = (nkcells[nbohrs] == None)*cytokines[nm_tumor]
+				mask = (nkcells[nbohrs] == None)
 				if np.any(mask):
+					mask = mask*cytokines[nm_tumor]
+					mask = np.array([mask[0]+mask[1], mask[1]+mask[2], mask[0]+mask[2]])
 					pos = nbohrs[np.argmax((mask==mask.max())*np.random.rand(mask.size))]
 					nkcells[pos] = self
 					nkcells[self.pos] = None
@@ -241,6 +243,7 @@ class Tissue2():
         self.alpha = params["resources_difussion_coef"] # Diffusion coefficient for resources flux.
         self.beta = params["cytokines_difussion_coef"] # Diffusion coefficient for cytokines flux.
         self.M = self.N-1 # Lattice row length for NK Cells.
+        self.delta = params["cytokines_decay"]
         # Model structures
         self.tumor = [np.empty(self.N**2, dtype=object)]
         # Initial tumor
@@ -248,8 +251,8 @@ class Tissue2():
         	consumption=params["tumorcell_consumption"],
         	mitosis_threshold=params["tumorcell_mitosis_threshold"],
         	apoptosis_threshold=params["tumorcell_apoptosis_threshold"])
-        self.resources = [np.random.randint(params["resources_init_min"], params["resources_init_max"], self.N**2)]
-        self.cytokines = [np.random.randint(params["cytokines_init_min"], params["cytokines_init_max"], self.N**2)]
+        self.resources = [np.random.uniform(params["resources_init_min"], params["resources_init_max"], self.N**2)]
+        self.cytokines = [np.random.uniform(params["cytokines_init_min"], params["cytokines_init_max"], self.N**2)]
         self.nkcells = [np.empty(2*self.M**2, dtype=object)]
         # Initial NK Cells
         init_pos = np.random.randint(0, 2*self.M**2, size=params["nk_init_count"])
@@ -320,10 +323,10 @@ class Tissue2():
     		if i%2 == 0:	
     			nm = [e, e+1, e+self.N]
     		else:
-    			nm = [e+1, e+self.N, e+self.N+1]
+    			nm = [e+self.N, e+1, e+self.N+1]
     	else:
     		if i%2 == 0:
-    			nm = [e, e+self.N, e+self.N+1]
+    			nm = [e+self.N, e, e+self.N+1]
     		else:
     			nm = [e, e+1, e+self.N+1]
     	return np.array(nm)
@@ -360,9 +363,9 @@ class Tissue2():
 
     def cytokines_flux(self):
     	aux = deepcopy(self.cytokines[-1])
-    	for i in range(0, self.N**2 - 1):
+    	for i in range(0, self.N**2):
             nbohrs = self.get_tumor_nm_periodic(i) + i
-            self.cytokines[-1][i] = aux[i] + self.alpha/6*((aux[nbohrs]).sum() - 6*aux[i])
+            self.cytokines[-1][i] = (aux[i]*(1-self.alpha) + self.alpha/6*((aux[nbohrs]).sum()))*(1-self.delta)
 
     def nk_timestep(self):
     	for cell in self.nkcells[-1][self.nkcells[-1] != None]:
@@ -392,7 +395,8 @@ class Tissue2():
    			vmax=self.cytokines[0].max(), 
    			ax=ax[1],
    			xticklabels=False,
-   			yticklabels=False)
+   			yticklabels=False,
+   			annot=False)
    		ax[1].set_xlabel("x")
    		ax[1].set_ylabel("y")
    		ax[1].set_title("Resources on timestep " + str(timestep))

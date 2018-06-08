@@ -24,6 +24,10 @@ class TumorCell():
         self.size = np.random.randint(0, self.mitosis_threshold//2) # initial size (consumed resources)
         self.center = self.center(N)
 
+    def __del__(self):
+    	#print("bye")
+    	return 
+
     def center(self, N):
     	x = 2*self.radius*(self.pos%N + ((self.pos//N)%2)/2)
     	y = (self.pos//N)*np.sqrt(3)*self.radius
@@ -99,6 +103,7 @@ class Tissue1():
         	mitosis_threshold=params["tumorcell_mitosis_threshold"],
         	apoptosis_threshold=params["tumorcell_apoptosis_threshold"])
         self.resources = [np.random.randint(params["resources_init_min"], params["resources_init_max"], self.N**2)]
+        self.garbage_collector = params["garbage_collector"]
 
     # Executes one timestep
     def timestep(self):
@@ -138,6 +143,10 @@ class Tissue1():
 
     def tumor_timestep(self):
     	for cell in self.tumor[-1][self.tumor[-1] != None]:
+    		if cell.state == 3:
+    			if np.random.uniform(0,1,1)[0] < self.garbage_collector:
+    				del cell
+    				print(cell.state)
     		cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))
 
     def plot_tissue(self, timestep=-1):
@@ -206,7 +215,8 @@ class NKCell():
 		if self.state == 0:
 			tmask = (1 - (tumor[nm_tumor] != None)*np.random.rand(nm_tumor.size)) < self.dp
 			if np.any(tmask):
-				self.state = 1
+				if tumor[nm_tumor[np.argmax(tmask)]].state != 3:
+					self.state = 1
 			else:
 				nbohrs = nm_nk + self.pos
 				mask = (nkcells[nbohrs] == None)
@@ -254,6 +264,7 @@ class Tissue2():
         self.resources = [np.random.uniform(params["resources_init_min"], params["resources_init_max"], self.N**2)]
         self.cytokines = [np.random.uniform(params["cytokines_init_min"], params["cytokines_init_max"], self.N**2)]
         self.nkcells = [np.empty(2*self.M**2, dtype=object)]
+        self.garbage_collector = params["garbage_collector"]
         # Initial NK Cells
         init_pos = np.random.randint(0, 2*self.M**2, size=params["nk_init_count"])
         for pos in init_pos:
@@ -373,7 +384,12 @@ class Tissue2():
 
     def tumor_timestep(self):
     	for cell in self.tumor[-1][self.tumor[-1] != None]:
-    		cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))
+    		if cell.state == 3:
+    			if np.random.uniform(0,1,1)[0] < self.garbage_collector:
+    				self.tumor[-1][cell.pos] = None
+    				del cell
+    		else:
+    			cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))
 
     def plot_tissue(self, timestep=-1):
    		fig, ax = roberplot.subplots(1,2)

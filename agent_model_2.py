@@ -12,21 +12,18 @@ class TumorCell():
     radius = 2.0
     colors = ["red", "orange", "green", "gray"]
   
-    def __init__(self, pos, N, consumption=2, mitosis_threshold=10, apoptosis_threshold=10):
+    def __init__(self, pos, N, consumption=2, mitosis_threshold=10, apoptosis_threshold=10, phagocytosis_rate=0.1):
     	# Parameters
         self.consumption = consumption # resources consumed each timestep
         self.mitosis_threshold = mitosis_threshold # resources needed to enter mitosis
         self.apoptosis_threshold = apoptosis_threshold
+        self.phagocytosis_rate = phagocytosis_rate
         # Variables
         self.pos = pos # initial position
         self.state = 0 # inital state
         self.reserve = apoptosis_threshold
         self.size = np.random.randint(0, self.mitosis_threshold//2) # initial size (consumed resources)
         self.center = self.center(N)
-
-    def __del__(self):
-    	#print("bye")
-    	return 
 
     def center(self, N):
     	x = 2*self.radius*(self.pos%N + ((self.pos//N)%2)/2)
@@ -84,6 +81,9 @@ class TumorCell():
     					apoptosis_threshold=self.apoptosis_threshold)
     				self.size = np.random.randint(0, self.mitosis_threshold//2)
     				self.state = 0
+    	else:
+    		if np.random.uniform(0,1,1)[0] < self.phagocytosis_rate:
+    			tumor[self.pos] = None
 
     def plot(self, N):
     	circle = roberplot.Circle(self.center, self.radius, color=self.colors[self.state], fill=False, lw=1.0, clip_on=False)
@@ -103,7 +103,6 @@ class Tissue1():
         	mitosis_threshold=params["tumorcell_mitosis_threshold"],
         	apoptosis_threshold=params["tumorcell_apoptosis_threshold"])
         self.resources = [np.random.randint(params["resources_init_min"], params["resources_init_max"], self.N**2)]
-        self.garbage_collector = params["garbage_collector"]
 
     # Executes one timestep
     def timestep(self):
@@ -143,10 +142,6 @@ class Tissue1():
 
     def tumor_timestep(self):
     	for cell in self.tumor[-1][self.tumor[-1] != None]:
-    		if cell.state == 3:
-    			if np.random.uniform(0,1,1)[0] < self.garbage_collector:
-    				del cell
-    				print(cell.state)
     		cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))
 
     def plot_tissue(self, timestep=-1):
@@ -222,13 +217,13 @@ class NKCell():
 				mask = (nkcells[nbohrs] == None)
 				if np.any(mask):
 					mask = mask*cytokines[nm_tumor]
-					mask = np.array([mask[0]+mask[1], mask[1]+mask[2], mask[0]+mask[2]])
-					pos = nbohrs[np.argmax((mask==mask.max())*np.random.rand(mask.size))]
+					mask = np.array([mask[0]+mask[1], mask[1]+mask[2], mask[0]+mask[2]])*np.random.uniform(1, 2, mask.size)
+					pos = nbohrs[np.argmax((mask==mask.max())*np.random.uniform(1, 2, mask.size))]
 					nkcells[pos] = self
 					nkcells[self.pos] = None
 					self.pos = pos
 		elif self.state == 1:
-			tmask = (tumor[nm_tumor] != None)*np.random.rand(nm_tumor.size)
+			tmask = (tumor[nm_tumor] != None)*np.random.uniform(1, 2, nm_tumor.size)
 			if np.any(tmask):
 				if tumor[nm_tumor[np.argmax(tmask)]].state != 3:
 					# Release cytokines
@@ -260,11 +255,11 @@ class Tissue2():
         self.tumor[-1][params["tumor_init_pos"]] = TumorCell(params["tumor_init_pos"], self.N, 
         	consumption=params["tumorcell_consumption"],
         	mitosis_threshold=params["tumorcell_mitosis_threshold"],
-        	apoptosis_threshold=params["tumorcell_apoptosis_threshold"])
+        	apoptosis_threshold=params["tumorcell_apoptosis_threshold"],
+        	phagocytosis_rate=params["tumorcell_phagocytosis_rate"])
         self.resources = [np.random.uniform(params["resources_init_min"], params["resources_init_max"], self.N**2)]
         self.cytokines = [np.random.uniform(params["cytokines_init_min"], params["cytokines_init_max"], self.N**2)]
         self.nkcells = [np.empty(2*self.M**2, dtype=object)]
-        self.garbage_collector = params["garbage_collector"]
         # Initial NK Cells
         init_pos = np.random.randint(0, 2*self.M**2, size=params["nk_init_count"])
         for pos in init_pos:
@@ -384,12 +379,7 @@ class Tissue2():
 
     def tumor_timestep(self):
     	for cell in self.tumor[-1][self.tumor[-1] != None]:
-    		if cell.state == 3:
-    			if np.random.uniform(0,1,1)[0] < self.garbage_collector:
-    				self.tumor[-1][cell.pos] = None
-    				del cell
-    		else:
-    			cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))
+    		cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))
 
     def plot_tissue(self, timestep=-1):
    		fig, ax = roberplot.subplots(1,2)
@@ -419,15 +409,17 @@ class Tissue2():
 
     def plot_data(self):
     	sums = []
+
     	for i in range(0, len(self.tumor)):
-    		sums.append([0,0,0,0])
-    		for cell in self.tumor[i][self.tumor[i] != None]:
-    			sums[-1][cell.state] += 1
+    		sums.append([0,0,0,0,0])
+    		for tumor_cell in self.tumor[i][self.tumor[i] != None]:
+    			sums[-1][tumor_cell.state] += 1
+    		sums[-1][4] = np.sum(self.nkcells[i] != None)
 
     	fig, ax = roberplot.subplots(1,2)
     	fig.set_size_inches(16,7.5)
-    	[a,b,c,d] = ax[0].plot(sums)
-    	ax[0].legend([a,b,c,d], ["Growing cells", "Resting cells", "Dividing Cells", "Dead cells"], loc=1)
+    	[a,b,c,d,e] = ax[0].plot(sums)
+    	ax[0].legend([a,b,c,d, e], ["Growing cells", "Resting cells", "Dividing Cells", "Dead cells", "NK Cells"], loc=1)
     	ax[0].set_xlabel("Timestep")
     	ax[0].set_ylabel("N° of cells")
     	ax[0].set_title("Number of cells by state for each timestep")
@@ -435,6 +427,7 @@ class Tissue2():
 
     	ax[1].scatter(np.arange(0, len(self.tumor)), np.log(np.sum(np.array(sums)[:,0:3], axis=1)), label="Active cells")
     	ax[1].scatter(np.arange(0, len(self.tumor)), np.log(np.sum(self.resources, axis=1)), label="Resources")
+    	ax[1].scatter(np.arange(0, len(self.tumor)), np.log(np.sum(self.cytokines, axis=1)), label="Cytokines")
     	ax[1].set_xlabel("Timestep")
     	ax[1].set_ylabel("log Quantity")
     	ax[1].set_title("Number of active cells and resources")

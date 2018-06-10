@@ -205,9 +205,10 @@ class NKCell():
 		#Variables
 		self.pos = pos
 		self.state = 0
+		self.moving = False
 
 	def cycle(self, tumor, nkcells, resources, cytokines, nm_nk, nm_tumor):
-		if self.state == 0:
+		if self.state == 0 and not self.moving:
 			tmask = (1 - (tumor[nm_tumor] != None)*np.random.rand(nm_tumor.size)) < self.dp
 			if np.any(tmask):
 				if tumor[nm_tumor[np.argmax(tmask)]].state != 3:
@@ -216,12 +217,13 @@ class NKCell():
 				nbohrs = nm_nk + self.pos
 				mask = (nkcells[nbohrs] == None)
 				if np.any(mask):
-					mask = mask*cytokines[nm_tumor]
-					mask = np.array([mask[0]+mask[1], mask[1]+mask[2], mask[0]+mask[2]])*np.random.uniform(1, 2, mask.size)
-					pos = nbohrs[np.argmax((mask==mask.max())*np.random.uniform(1, 2, mask.size))]
+					cmask = mask*cytokines[nm_tumor]
+					cmask = np.array([mask[0]+mask[1], mask[1]+mask[2], mask[0]+mask[2]])*np.random.uniform(1, 2, mask.size)*mask
+					pos = nbohrs[np.argmax((cmask==cmask.max())*np.random.uniform(1, 2, cmask.size))]
 					nkcells[pos] = self
 					nkcells[self.pos] = None
 					self.pos = pos
+					self.moving = True
 		elif self.state == 1:
 			tmask = (tumor[nm_tumor] != None)*np.random.uniform(1, 2, nm_tumor.size)
 			if np.any(tmask):
@@ -261,7 +263,7 @@ class Tissue2():
         self.cytokines = [np.random.uniform(params["cytokines_init_min"], params["cytokines_init_max"], self.N**2)]
         self.nkcells = [np.empty(2*self.M**2, dtype=object)]
         # Initial NK Cells
-        init_pos = np.random.randint(0, 2*self.M**2, size=params["nk_init_count"])
+        init_pos = np.random.choice(np.arange(0, 2*self.M**2), size=params["nk_init_count"], replace=False)
         for pos in init_pos:
         	self.nkcells[-1][pos] = NKCell(pos,
         		movement_speed=params["nkcell_movement_speed"],
@@ -376,7 +378,8 @@ class Tissue2():
     def nk_timestep(self):
     	for cell in self.nkcells[-1][self.nkcells[-1] != None]:
     		cell.cycle(self.tumor[-1], self.nkcells[-1], self.resources[-1], self.cytokines[-1], self.get_nk_nm(cell.pos), self.get_nk_tumor_nm(cell.pos))
-
+    	for cell in self.nkcells[-1][self.nkcells[-1] != None]:
+    		cell.moving = False
     def tumor_timestep(self):
     	for cell in self.tumor[-1][self.tumor[-1] != None]:
     		cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))

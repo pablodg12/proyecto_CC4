@@ -166,6 +166,7 @@ class Tissue1():
 		ax[1].set_xlabel("x")
 		ax[1].set_ylabel("y")
 		ax[1].set_title("Resources on timestep " + str(timestep))
+		ax.savefig("imagenes/"+"output"+str(timestep)+".png")
 
 	def plot_data(self):
 		sums = []
@@ -302,6 +303,24 @@ class Tissue2():
 		self.resources_flux()
 		self.cytokines_flux()
 
+	def get_nm_periodic(self, i):
+		if (i%self.N == 0):
+			if((i//self.N)%2 == 0):
+				nm = [1, self.N, 2*self.N-1, self.N-1, -1, -self.N]
+			else:
+				nm = [1, self.N+1, self.N, self.N-1, -self.N, -self.N+1]
+		elif (i%self.N == self.N-1):
+			if(((i+1)//self.N)%2 == 0):
+				nm = [-self.N+1, 1, self.N, -1, -self.N, -2*self.N+1]
+			else:
+				nm = [-self.N+1, self.N, self.N-1, -1, -self.N-1, -self.N]
+		else:
+			if((i//self.N)%2 == 0):
+				nm = [1, self.N, self.N-1, -1, -self.N-1, -self.N]
+			else:
+				nm = [1, self.N+1, self.N, -1, -self.N, -self.N+1]
+		return np.array(nm)
+
 	# Returns the neighbors mask for a given cell with rigid boundary conditions.
 	def get_tumor_nm(self, i):
 		if (i%self.N == 0):
@@ -386,7 +405,7 @@ class Tissue2():
 			if i < self.N or i > self.N**2 - self.N or i%self.N == 0 or i%self.N == self.N-1:
 				self.resources[-1][i] = self.resources[-2][i]
 				continue
-			nbohrs = self.get_tumor_nm(i) + i
+			nbohrs = self.get_tumor_nm_periodic(i) + i
 			self.resources[-1][i] = aux[i] + self.alpha/6*((aux[nbohrs]).sum() - 6*aux[i])
 
 	def cytokines_flux(self):
@@ -402,7 +421,7 @@ class Tissue2():
 			cell.moving = False
 	def tumor_timestep(self):
 		for cell in self.tumor[-1][self.tumor[-1] != None]:
-			cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm(cell.pos))
+			cell.cycle(self.tumor[-1], self.resources[-1], self.get_tumor_nm_periodic(cell.pos))
 
 	def plot_tissue(self, timestep=-1):
 		fig, ax = roberplot.subplots(1,2)
@@ -429,6 +448,7 @@ class Tissue2():
 		ax[1].set_xlabel("x")
 		ax[1].set_ylabel("y")
 		ax[1].set_title("Resources on timestep " + str(timestep))
+		roberplot.savefig("img"+"/"+str(timestep)+".png")
 
 	def plot_data(self):
 		sums = []
@@ -456,3 +476,5 @@ class Tissue2():
 		ax[1].set_title("Number of active cells and resources")
 		ax[1].legend()
 		ax[1].grid(True)
+
+		return(sums)
